@@ -6,36 +6,36 @@ A social web platform where students can post anonymous confessions, react, comm
 
 ### Prerequisites
 - Python 3.8+
-- MySQL Server
-- Node.js 16+
+- Node.js 16+ (includes `npm`)
+- MySQL Server 8+ (running on port 3307)
 
 ### Setup
 
-1. **Clone and setup environment:**
-   ```bash
-   python -m venv .venv
-   .venv\Scripts\activate  # Windows
-   pip install -r requirements.txt
+1. **Install backend dependencies:**
+   ```powershell
+   py -3 -m venv .venv
+   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
    ```
 
 2. **Configure database:**
-   - Create a `.env` file in the project root with:
-     ```
-     DB_HOST=localhost
-     DB_PORT=3306
-     DB_USER=root
-     DB_PASSWORD=your_mysql_password
-     DB_NAME=confess_wall
-     SECRET_KEY=your-secret-key-change-in-production
-     ```
+   Create a `.env` file in the project root:
+   ```ini
+   DB_ENGINE=mysql
+   DB_HOST=localhost
+   DB_PORT=3307
+   DB_USER=root
+   DB_PASSWORD=your_mysql_password
+   DB_NAME=confess_wall
+   SECRET_KEY=your-secret-key-change-in-production
+   ```
 
 3. **Setup database:**
-   ```bash
-   python backend/setup_db.py
+   ```powershell
+   .\.venv\Scripts\python.exe backend\setup_db.py
    ```
 
 4. **Install frontend dependencies:**
-   ```bash
+   ```powershell
    cd frontend
    npm install
    cd ..
@@ -43,24 +43,21 @@ A social web platform where students can post anonymous confessions, react, comm
 
 ### Run
 
-**Windows (PowerShell):**
-```bash
-.\run.ps1
+**One Command (Recommended):**
+```powershell
+.\start.ps1
 ```
 
-**Manual:**
-```bash
-# Terminal 1 - Backend
-.venv\Scripts\activate
-python -m backend.main
-
-# Terminal 2 - Frontend
-cd frontend
-npm run dev
+Or use the batch file:
+```cmd
+start.bat
 ```
 
-- Backend: http://localhost:8000
+This will start both backend and frontend automatically!
+
+**Access:**
 - Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
 - API Docs: http://localhost:8000/docs
 
 ### Default Admin

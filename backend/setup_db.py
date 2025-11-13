@@ -1,119 +1,149 @@
 """
-Setup database: Create database and initialize with sample data
-Run this script once to set up your database
+Setup database: Create database and initialize with sample data.
+Run this script once to set up your database.
 """
-import pymysql
-import os
-from dotenv import load_dotenv
 
-# Load environment variables
+import sys
+from pathlib import Path
+
+from dotenv import load_dotenv
+from sqlalchemy.engine.url import make_url
+
+# Load environment variables early so backend.database sees them
 load_dotenv()
 
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = int(os.getenv("DB_PORT", "3306"))
-DB_USER = os.getenv("DB_USER", "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "")
-DB_NAME = os.getenv("DB_NAME", "confess_wall")
+CURRENT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = CURRENT_DIR.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-# Check if .env file exists
-if not os.path.exists(".env"):
-    print("❌ Error: .env file not found!")
-    print("\nPlease create a .env file (copy from .env.example)")
-    exit(1)
+from backend.auth import get_password_hash
+from backend.database import (
+    DB_BACKEND,
+    Base,
+    SQLALCHEMY_DATABASE_URL,
+    SessionLocal,
+    engine,
+)
+from backend.models import Campus, Tag, User, UserRole
 
-print("=" * 60)
-print("Database Setup")
-print("=" * 60)
-print()
 
-# Step 1: Create database
-print(f"Step 1: Creating database '{DB_NAME}'...")
-try:
+def create_mysql_database(url) -> None:
+    """Ensure the target MySQL database exists before creating tables."""
+    try:
+        import pymysql
+    except ImportError as exc:  # pragma: no cover - defensive
+        print("[ERROR] PyMySQL is required to set up a MySQL database.", file=sys.stderr)
+        print("Please install dependencies with `pip install -r requirements.txt`.", file=sys.stderr)
+        raise SystemExit(1) from exc
+
+    print(f"Step 1: Creating database '{url.database}' on {url.host or 'localhost'}...")
     connect_kwargs = {
-        'host': DB_HOST,
-        'port': DB_PORT,
-        'user': DB_USER,
-        'charset': 'utf8mb4'
+        "host": url.host or "localhost",
+        "port": url.port or 3307,
+        "user": url.username or "root",
+        "charset": "utf8mb4",
     }
-    
-    if DB_PASSWORD:
-        connect_kwargs['password'] = DB_PASSWORD
-    
-    connection = pymysql.connect(**connect_kwargs)
-    with connection.cursor() as cursor:
-        cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{DB_NAME}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
-    connection.close()
-    print(f"✅ Database '{DB_NAME}' created or already exists.")
-except pymysql.Error as e:
-    error_code, error_msg = e.args
-    print(f"❌ Error: ({error_code}) {error_msg}")
-    print("\nPlease check your MySQL credentials in .env file")
-    exit(1)
+    if url.password:
+        connect_kwargs["password"] = url.password
 
-# Step 2: Create tables and initialize data
-print("\nStep 2: Creating tables and initializing data...")
-try:
-    from backend.database import SessionLocal, engine, Base
-    from backend.models import User, Campus, Tag, UserRole
-    from backend.auth import get_password_hash
+    try:
+        connection = pymysql.connect(**connect_kwargs)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"CREATE DATABASE IF NOT EXISTS `{url.database}` "
+                "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+            )
+        connection.close()
+        print(f"[OK] Database '{url.database}' is ready.")
+    except pymysql.Error as exc:
+        error_code, error_msg = exc.args
+        print(f"[ERROR] ({error_code}) {error_msg}", file=sys.stderr)
+        print("Please verify your MySQL credentials or server status.", file=sys.stderr)
+        raise SystemExit(1) from exc
 
-    # Create all tables
+
+def bootstrap_data() -> None:
+    """Create tables and seed initial application data."""
+    print("\nStep 2: Creating tables and inserting seed data...")
     Base.metadata.create_all(bind=engine)
-    print("✅ Tables created successfully!")
+    print("[OK] Tables created successfully!")
 
     db = SessionLocal()
 
-    # Create admin user
-    admin_email = "admin@confesswall.com"
-    admin_user = db.query(User).filter(User.email == admin_email).first()
-    if not admin_user:
-        admin_user = User(
-            email=admin_email,
-            password_hash=get_password_hash("admin123"),
-            role=UserRole.ADMIN
-        )
-        db.add(admin_user)
-        print(f"✅ Created admin user: {admin_email} / admin123")
+    try:
+        admin_email = "admin@confesswall.com"
+        admin_user = db.query(User).filter(User.email == admin_email).first()
+        if not admin_user:
+            admin_user = User(
+                email=admin_email,
+                password_hash=get_password_hash("admin123"),
+                role=UserRole.ADMIN,
+            )
+            db.add(admin_user)
+            print(f"[OK] Created admin user: {admin_email} / admin123")
 
-    # Create sample campuses
-    campuses_data = [
-        {"name": "UP Diliman", "domain": "up.edu.ph", "description": "University of the Philippines Diliman"},
-        {"name": "UST", "domain": "ust.edu.ph", "description": "University of Santo Tomas"},
-        {"name": "DLSU", "domain": "dlsu.edu.ph", "description": "De La Salle University"},
-        {"name": "Ateneo", "domain": "ateneo.edu", "description": "Ateneo de Manila University"},
-    ]
+        campuses_data = [
+            {"name": "UP Diliman", "domain": "up.edu.ph", "description": "University of the Philippines Diliman"},
+            {"name": "UST", "domain": "ust.edu.ph", "description": "University of Santo Tomas"},
+            {"name": "DLSU", "domain": "dlsu.edu.ph", "description": "De La Salle University"},
+            {"name": "Ateneo", "domain": "ateneo.edu", "description": "Ateneo de Manila University"},
+        ]
 
-    for campus_data in campuses_data:
-        campus = db.query(Campus).filter(Campus.name == campus_data["name"]).first()
-        if not campus:
-            campus = Campus(**campus_data)
-            db.add(campus)
-            print(f"✅ Created campus: {campus_data['name']}")
+        for campus_data in campuses_data:
+            campus = db.query(Campus).filter(Campus.name == campus_data["name"]).first()
+            if not campus:
+                db.add(Campus(**campus_data))
+                print(f"[OK] Created campus: {campus_data['name']}")
 
-    # Create sample tags
-    tags_data = ["love", "rant", "crush", "confession", "advice", "support", "funny", "serious"]
+        tags_data = ["love", "rant", "crush", "confession", "advice", "support", "funny", "serious"]
+        for tag_name in tags_data:
+            tag = db.query(Tag).filter(Tag.name == tag_name).first()
+            if not tag:
+                db.add(Tag(name=tag_name, is_allowed=True))
+                print(f"[OK] Created tag: #{tag_name}")
 
-    for tag_name in tags_data:
-        tag = db.query(Tag).filter(Tag.name == tag_name).first()
-        if not tag:
-            tag = Tag(name=tag_name, is_allowed=True)
-            db.add(tag)
-            print(f"✅ Created tag: #{tag_name}")
+        db.commit()
+    finally:
+        db.close()
 
-    db.commit()
-    db.close()
-    
     print("\n" + "=" * 60)
-    print("✅ Database setup complete!")
+    print("[OK] Database setup complete!")
     print("=" * 60)
     print("\nAdmin credentials:")
     print("Email: admin@confesswall.com")
     print("Password: admin123")
     print()
 
-except Exception as e:
-    print(f"❌ Error: {e}")
-    import traceback
-    traceback.print_exc()
-    exit(1)
 
+def main() -> None:
+    print("=" * 60)
+    print("Database Setup")
+    print("=" * 60)
+    print()
+
+    url = make_url(SQLALCHEMY_DATABASE_URL)
+
+    if DB_BACKEND == "sqlite":
+        database_path = url.database or ":memory:"
+        display_path = database_path
+        if database_path not in (None, ":memory:"):
+            sqlite_path = Path(database_path)
+            if not sqlite_path.is_absolute():
+                sqlite_path = (Path.cwd() / sqlite_path).resolve()
+            display_path = sqlite_path
+        print(f"Using SQLite database at: {display_path}")
+    elif DB_BACKEND == "mysql":
+        create_mysql_database(url)
+    else:
+        print(f"[WARNING] Database backend '{DB_BACKEND}' is not explicitly supported by this setup script.")
+        print("Continuing with table creation only.")
+
+    bootstrap_data()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nSetup cancelled by user.")
